@@ -8,9 +8,10 @@ const userController = {
     // Profile Management
     async getProfile(req, res) {
         try {
+            console.log('User ID before query:', req.user.id); // Log the user ID
             const user = await new Promise((resolve, reject) => {
                 db.get(`
-                    SELECT id, name, email, phone, email_verified, created_at, updated_at
+                    SELECT id, name, email, phone, isEmailVerified, createdAt, updatedAt
                     FROM users WHERE id = ?
                 `, [req.user.id], (err, row) => {
                     if (err) reject(err);
@@ -67,7 +68,7 @@ const userController = {
                     });
                 }
 
-                updates.push('email = ?, email_verified = 0');
+                updates.push('email = ?, isEmailVerified = 0');
                 values.push(email);
             }
 
@@ -98,7 +99,7 @@ const userController = {
                 });
             }
 
-            updates.push('updated_at = datetime("now")');
+            updates.push('updatedAt = datetime("now")');
             values.push(req.user.id);
 
             await new Promise((resolve, reject) => {
@@ -114,7 +115,7 @@ const userController = {
 
             // Get updated user data
             const updatedUser = await new Promise((resolve, reject) => {
-                db.get('SELECT id, name, email, phone, email_verified FROM users WHERE id = ?', [req.user.id], (err, row) => {
+                db.get('SELECT id, name, email, phone, isEmailVerified FROM users WHERE id = ?', [req.user.id], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -134,6 +135,7 @@ const userController = {
     // Email Preferences
     async getEmailPreferences(req, res) {
         try {
+            console.log('User ID before query:', req.user.id); // Log the user ID
             const preferences = await new Promise((resolve, reject) => {
                 db.get(`
                     SELECT newsletter, promotions, consultation_reminders, payment_notifications
@@ -195,6 +197,7 @@ const userController = {
     // Account Management
     async deactivateAccount(req, res) {
         try {
+            console.log('User ID before query:', req.user.id); // Log the user ID
             await new Promise((resolve, reject) => {
                 db.run('UPDATE users SET is_active = 0, updated_at = datetime("now") WHERE id = ?',
                     [req.user.id], (err) => {
@@ -349,18 +352,20 @@ const userController = {
     // Notification Management
     async getNotifications(req, res) {
         try {
+            console.log('User ID before query:', req.user.id); // Log the user ID
             const notifications = await new Promise((resolve, reject) => {
                 db.all(`
-                    SELECT id, type, title, message, is_read, created_at
-                    FROM notifications
-                    WHERE user_id = ?
-                    ORDER BY created_at DESC
+                    SELECT id, type, title, message, isRead, createdAt
+                    FROM Notifications
+                    WHERE userId = ?
+                    ORDER BY createdAt DESC
                 `, [req.user.id], (err, rows) => {
                     if (err) reject(err);
                     resolve(rows || []);
                 });
             });
 
+            console.log('Notifications:', notifications); // Log the notifications
             res.json({
                 success: true,
                 data: notifications

@@ -16,6 +16,9 @@ const authMiddleware = {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+            // Log the decoded user ID
+            console.log('Decoded User ID:', decoded.id);
+
             // Get user
             const user = await new Promise((resolve, reject) => {
                 db.get('SELECT * FROM users WHERE id = ?', [decoded.id], (err, row) => {
@@ -33,6 +36,7 @@ const authMiddleware = {
 
             // Attach user to request
             req.user = user;
+            console.log('Verified User ID:', req.user.id); // Added logging
             next();
         } catch (error) {
             console.error('Token verification error:', error);

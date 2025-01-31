@@ -5,12 +5,12 @@ const userController = require('../controllers/user.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
 // Profile Management Routes
-router.get('/profile', 
+router.get('/profile',
     authMiddleware.verifyToken,
     userController.getProfile
 );
 
-router.put('/profile', 
+router.put('/profile',
     authMiddleware.verifyToken,
     [
         body('name').optional().trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
