@@ -8,10 +8,9 @@ const userController = {
     // Profile Management
     async getProfile(req, res) {
         try {
-            console.log('User ID before query:', req.user.id); // Log the user ID
             const user = await new Promise((resolve, reject) => {
                 db.get(`
-                    SELECT id, name, email, phone, isEmailVerified, createdAt, updatedAt
+                    SELECT id, name, email, phone, email_verified, created_at, updated_at
                     FROM users WHERE id = ?
                 `, [req.user.id], (err, row) => {
                     if (err) reject(err);
@@ -44,18 +43,16 @@ const userController = {
             if (!errors.isEmpty()) {
                 return res.status(400).json({ success: false, errors: errors.array() });
             }
-
+    
             const allowedFields = [
-                'name', 'email', 'phone', 'profile_picture_url',
+                'name', 'email', 'phone', 'profile_picture_url', 
                 'two_factor_method', 'backup_codes'
             ]; // Allowed fields that can be updated
-
+    
             const updates = [];
             const values = [];
             const userId = req.user.id;
-            let newEmailVerificationToken = null;
-            let updatedEmail = null;
-
+    
             for (const field of allowedFields) {
                 if (req.body[field] !== undefined) {
                     // Handle special cases
@@ -67,26 +64,17 @@ const userController = {
                                 resolve(row);
                             });
                         });
-
+    
                         if (existingUser) {
                             return res.status(400).json({
                                 success: false,
                                 error: 'Email already in use'
                             });
                         }
-
-                        // Generate new verification token
-                        newEmailVerificationToken = jwt.sign(
-                            { email: req.body.email },
-                            process.env.JWT_SECRET,
-                            { expiresIn: '24h' }
-                        );
-                        updatedEmail = req.body.email;
-
-                        // Update email & reset email_verified
-                        updates.push('email = ?, email_verified = 0');
+    
+                        updates.push('email = ?, email_verified = 0'); // Reset email verification
                         values.push(req.body.email);
-                    }
+                    } 
                     else if (field === 'phone') {
                         // Check if phone is already in use
                         const existingUser = await new Promise((resolve, reject) => {
@@ -95,17 +83,17 @@ const userController = {
                                 resolve(row);
                             });
                         });
-
+    
                         if (existingUser) {
                             return res.status(400).json({
                                 success: false,
                                 error: 'Phone number already in use'
                             });
                         }
-
+    
                         updates.push('phone = ?');
                         values.push(req.body.phone);
-                    }
+                    } 
                     else {
                         // For all other allowed fields
                         updates.push(`${field} = ?`);
@@ -113,19 +101,19 @@ const userController = {
                     }
                 }
             }
-
+    
             if (updates.length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'No updates provided'
                 });
             }
-
+    
             // Always update the `updated_at` timestamp
             updates.push('updated_at = datetime("now")');
-
+    
             values.push(userId); // Append userId for WHERE clause
-
+    
             // Update user information dynamically
             await new Promise((resolve, reject) => {
                 db.run(`
@@ -137,7 +125,7 @@ const userController = {
                     resolve();
                 });
             });
-
+    
             // Get updated user data
             const updatedUser = await new Promise((resolve, reject) => {
                 db.get(`
@@ -149,12 +137,11 @@ const userController = {
                     resolve(row);
                 });
             });
-
+    
             res.json({
                 success: true,
                 message: 'Profile updated successfully',
-                data: updatedUser,
-                ...(newEmailVerificationToken && { email_verification_token: newEmailVerificationToken }) // Include token in response if email was updated
+                data: updatedUser
             });
         } catch (error) {
             console.error('Error updating profile:', error);
@@ -162,11 +149,9 @@ const userController = {
         }
     },
 
-
     // Email Preferences
     async getEmailPreferences(req, res) {
         try {
-            console.log('User ID before query:', req.user.id); // Log the user ID
             const preferences = await new Promise((resolve, reject) => {
                 db.get(`
                     SELECT newsletter, promotions, consultation_reminders, payment_notifications
@@ -228,7 +213,6 @@ const userController = {
     // Account Management
     async deactivateAccount(req, res) {
         try {
-            console.log('User ID before query:', req.user.id); // Log the user ID
             await new Promise((resolve, reject) => {
                 db.run('UPDATE users SET is_active = 0, updated_at = datetime("now") WHERE id = ?',
                     [req.user.id], (err) => {
@@ -383,20 +367,18 @@ const userController = {
     // Notification Management
     async getNotifications(req, res) {
         try {
-            console.log('User ID before query:', req.user.id); // Log the user ID
             const notifications = await new Promise((resolve, reject) => {
                 db.all(`
-                    SELECT id, type, title, message, isRead, createdAt
-                    FROM Notifications
-                    WHERE userId = ?
-                    ORDER BY createdAt DESC
+                    SELECT id, type, title, message, is_read, created_at
+                    FROM notifications
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
                 `, [req.user.id], (err, rows) => {
                     if (err) reject(err);
                     resolve(rows || []);
                 });
             });
 
-            console.log('Notifications:', notifications); // Log the notifications
             res.json({
                 success: true,
                 data: notifications

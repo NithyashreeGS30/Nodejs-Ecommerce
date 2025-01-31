@@ -85,7 +85,7 @@ const authController = {
 
             // Find user
             const user = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM Users WHERE email = ?', [email], (err, row) => {
+                db.get('SELECT * FROM users WHERE email = ?', [email], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -119,7 +119,7 @@ const authController = {
             const token = jwt.sign(
                 { id: user.id },
                 process.env.JWT_SECRET,
-                { expiresIn: process.env.JWT_EXPIRATION || '24h' }
+                { expiresIn: process.env.JWT_EXPIRATION }
             );
 
             // Store token in database
@@ -141,7 +141,8 @@ const authController = {
                     user: {
                         id: user.id,
                         name: user.name,
-                        email: user.email
+                        email: user.email,
+                        phone: user.phone
                     }
                 }
             });
