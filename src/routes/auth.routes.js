@@ -26,9 +26,9 @@ router.post('/register', registerValidation, authController.register);
 router.post('/login', loginValidation, authController.login);
 router.post('/logout', authMiddleware.verifyToken, authController.logout);
 router.post('/logout-all', authMiddleware.verifyToken, authController.logoutAll);
-router.post('/verify-email/:token', authController.verifyEmail);
+router.post('/verify-email/', authController.verifyEmail);
 router.post('/resend-verification', authMiddleware.verifyToken, authController.resendVerification);
 router.post('/forgot-password', body('email').isEmail(), authController.forgotPassword);
-router.post('/reset-password/:token', passwordResetValidation, authController.resetPassword);
+router.post('/reset-password', passwordResetValidation, authController.resetPassword);
 
 module.exports = router;

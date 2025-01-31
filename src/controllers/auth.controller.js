@@ -50,9 +50,16 @@ const authController = {
                 );
             });
 
+            const verificationToken = jwt.sign(
+                { email: email },
+                process.env.JWT_SECRET,
+                { expiresIn: process.env.JWT_VERIFICATION_EXPIRATION || '24h' }
+            );
+
             res.status(201).json({
                 status: 'success',
-                message: 'Registration successful. Please verify your email.'
+                message: 'Registration successful. Please verify your email.',
+                verificationToken: verificationToken
             });
         } catch (error) {
             console.error('Registration error:', error);
@@ -100,12 +107,32 @@ const authController = {
                 });
             }
 
+            // Add email verification check
+            if (user.email_verified !== 1) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Email not verified. Please check your email for verification instructions.'
+                });
+            }
+
             // Generate JWT token
             const token = jwt.sign(
                 { id: user.id },
                 process.env.JWT_SECRET,
                 { expiresIn: process.env.JWT_EXPIRATION }
             );
+
+            // Store token in database
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO user_tokens (user_id, token) VALUES (?, ?)',
+                    [user.id, token],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
 
             res.json({
                 status: 'success',
@@ -130,6 +157,23 @@ const authController = {
 
     async logout(req, res) {
         try {
+            const token = req.headers.authorization?.split(' ')[1];
+
+            if (!token) {
+                return res.status(401).json({
+                    status: 'error',
+                    message: 'No token provided'
+                });
+            }
+
+            // Remove this token from the `user_tokens` table
+            await new Promise((resolve, reject) => {
+                db.run('DELETE FROM user_tokens WHERE token = ?', [token], function (err) {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
             res.json({
                 status: 'success',
                 message: 'Logged out successfully'
@@ -145,6 +189,14 @@ const authController = {
 
     async logoutAll(req, res) {
         try {
+            // Delete all tokens for this user's ID
+            await new Promise((resolve, reject) => {
+                db.run('DELETE FROM user_tokens WHERE user_id = ?', [req.user.id], function (err) {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
             res.json({
                 status: 'success',
                 message: 'Logged out from all devices'
@@ -160,7 +212,7 @@ const authController = {
 
     async verifyEmail(req, res) {
         try {
-            const { token } = req.params;
+            const { token } = req.body;
 
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -168,7 +220,7 @@ const authController = {
             // Update user
             await new Promise((resolve, reject) => {
                 db.run(
-                    'UPDATE users SET is_verified = 1 WHERE email = ?',
+                    'UPDATE users SET email_verified = 1 WHERE email = ?',
                     [decoded.email],
                     (err) => {
                         if (err) reject(err);
@@ -239,7 +291,7 @@ const authController = {
 
     async resetPassword(req, res) {
         try {
-            const { token } = req.params;
+            const token = req.headers.authorization?.split(' ')[1];
             const { password } = req.body;
 
             // Verify token

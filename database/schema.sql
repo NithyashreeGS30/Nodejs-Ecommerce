@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     phone TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     email_verified BOOLEAN DEFAULT 0,
+    profile_picture_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     is_active INTEGER DEFAULT 1,
@@ -15,6 +16,15 @@ CREATE TABLE IF NOT EXISTS users (
     two_factor_secret TEXT,
     backup_codes TEXT
 );
+
+-- User Tokens table
+CREATE TABLE IF NOT EXISTS user_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  token TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- Consultants table
 CREATE TABLE IF NOT EXISTS consultants (

@@ -35,60 +35,82 @@ const userController = {
         }
     },
 
+    // update the user profile
     async updateProfile(req, res) {
+        console.log(req.body);
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
                 return res.status(400).json({ success: false, errors: errors.array() });
             }
 
-            const { name, email, phone } = req.body;
+            const allowedFields = [
+                'name', 'email', 'phone', 'profile_picture_url',
+                'two_factor_method', 'backup_codes'
+            ]; // Allowed fields that can be updated
+
             const updates = [];
             const values = [];
+            const userId = req.user.id;
+            let newEmailVerificationToken = null;
+            let updatedEmail = null;
 
-            if (name) {
-                updates.push('name = ?');
-                values.push(name);
-            }
+            for (const field of allowedFields) {
+                if (req.body[field] !== undefined) {
+                    // Handle special cases
+                    if (field === 'email') {
+                        // Check if email is already in use
+                        const existingUser = await new Promise((resolve, reject) => {
+                            db.get('SELECT id FROM users WHERE email = ? AND id != ?', [req.body.email, userId], (err, row) => {
+                                if (err) reject(err);
+                                resolve(row);
+                            });
+                        });
 
-            if (email) {
-                // Check if email is already in use
-                const existingUser = await new Promise((resolve, reject) => {
-                    db.get('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id], (err, row) => {
-                        if (err) reject(err);
-                        resolve(row);
-                    });
-                });
+                        if (existingUser) {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'Email already in use'
+                            });
+                        }
 
-                if (existingUser) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Email already in use'
-                    });
+                        // Generate new verification token
+                        newEmailVerificationToken = jwt.sign(
+                            { email: req.body.email },
+                            process.env.JWT_SECRET,
+                            { expiresIn: '24h' }
+                        );
+                        updatedEmail = req.body.email;
+
+                        // Update email & reset email_verified
+                        updates.push('email = ?, email_verified = 0');
+                        values.push(req.body.email);
+                    }
+                    else if (field === 'phone') {
+                        // Check if phone is already in use
+                        const existingUser = await new Promise((resolve, reject) => {
+                            db.get('SELECT id FROM users WHERE phone = ? AND id != ?', [req.body.phone, userId], (err, row) => {
+                                if (err) reject(err);
+                                resolve(row);
+                            });
+                        });
+
+                        if (existingUser) {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'Phone number already in use'
+                            });
+                        }
+
+                        updates.push('phone = ?');
+                        values.push(req.body.phone);
+                    }
+                    else {
+                        // For all other allowed fields
+                        updates.push(`${field} = ?`);
+                        values.push(req.body[field]);
+                    }
                 }
-
-                updates.push('email = ?, email_verified = 0');
-                values.push(email);
-            }
-
-            if (phone) {
-                // Check if phone is already in use
-                const existingUser = await new Promise((resolve, reject) => {
-                    db.get('SELECT id FROM users WHERE phone = ? AND id != ?', [phone, req.user.id], (err, row) => {
-                        if (err) reject(err);
-                        resolve(row);
-                    });
-                });
-
-                if (existingUser) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'Phone number already in use'
-                    });
-                }
-
-                updates.push('phone = ?');
-                values.push(phone);
             }
 
             if (updates.length === 0) {
@@ -98,9 +120,12 @@ const userController = {
                 });
             }
 
+            // Always update the `updated_at` timestamp
             updates.push('updated_at = datetime("now")');
-            values.push(req.user.id);
 
+            values.push(userId); // Append userId for WHERE clause
+
+            // Update user information dynamically
             await new Promise((resolve, reject) => {
                 db.run(`
                     UPDATE users 
@@ -114,7 +139,11 @@ const userController = {
 
             // Get updated user data
             const updatedUser = await new Promise((resolve, reject) => {
-                db.get('SELECT id, name, email, phone, email_verified FROM users WHERE id = ?', [req.user.id], (err, row) => {
+                db.get(`
+                    SELECT id, name, email, phone, profile_picture_url, email_verified, updated_at 
+                    FROM users 
+                    WHERE id = ?
+                `, [userId], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
@@ -123,13 +152,15 @@ const userController = {
             res.json({
                 success: true,
                 message: 'Profile updated successfully',
-                data: updatedUser
+                data: updatedUser,
+                ...(newEmailVerificationToken && { email_verification_token: newEmailVerificationToken }) // Include token in response if email was updated
             });
         } catch (error) {
             console.error('Error updating profile:', error);
             res.status(500).json({ success: false, error: 'Failed to update profile' });
         }
     },
+
 
     // Email Preferences
     async getEmailPreferences(req, res) {

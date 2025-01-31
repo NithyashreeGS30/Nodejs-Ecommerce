@@ -1,0 +1,482 @@
+{
+	"info": {
+		"_postman_id": "5b27c4c4-1906-4dd2-a4e5-d68a76a0ca87",
+		"name": "Sumeru",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "39319208"
+	},
+	"item": [
+		{
+			"name": "http://localhost:3003/api/auth/register",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Test User\",\n    \"email\": \"test@example.com\",\n    \"phone\": \"1234567890\",\n    \"password\": \"password123\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3003/api/auth/register",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"auth",
+						"register"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/auth/login",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"test@example.com\",\n    \"password\": \"password123\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3003/api/auth/login",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"auth",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/consultants",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/consultants",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"consultants"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/consultants/4f0e41a0-c312-4bd3-b8ad-660f8660942b",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/consultants/4f0e41a0-c312-4bd3-b8ad-660f8660942b",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"consultants",
+						"4f0e41a0-c312-4bd3-b8ad-660f8660942b"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/consultants/3a28f3ac-35eb-4c94-84d2-79f76f015aa3/availability?start_date=2025-01-29&end_date=2025-02-05",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/consultants/3a28f3ac-35eb-4c94-84d2-79f76f015aa3/availability?start_date=2025-01-29&end_date=2025-02-05",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"consultants",
+						"3a28f3ac-35eb-4c94-84d2-79f76f015aa3",
+						"availability"
+					],
+					"query": [
+						{
+							"key": "start_date",
+							"value": "2025-01-29"
+						},
+						{
+							"key": "end_date",
+							"value": "2025-02-05"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/book",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"consultant_id\": \"3a28f3ac-35eb-4c94-84d2-79f76f015aa3\",\n    \"consultation_type_id\": \"369b200e-6b84-4791-ad16-da3fa0f77b5f\",\n    \"scheduled_start_time\": \"2025-01-29T08:00:00\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3003/api/book",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"book"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/reviews",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"consultation_id\": \"146081ca-f883-4de7-b42a-7a0653afa496\",\n    \"rating\": 5,\n    \"comment\": \"Excellent consultation!\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3003/api/reviews",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"reviews"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/favorites/3a28f3ac-35eb-4c94-84d2-79f76f015aa3",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/favorites/3a28f3ac-35eb-4c94-84d2-79f76f015aa3",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"favorites",
+						"3a28f3ac-35eb-4c94-84d2-79f76f015aa3"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/favorites/3a28f3ac-35eb-4c94-84d2-79f76f015aa3",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/favorites/3a28f3ac-35eb-4c94-84d2-79f76f015aa3",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"favorites",
+						"3a28f3ac-35eb-4c94-84d2-79f76f015aa3"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/users/profile",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/users/profile",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"users",
+						"profile"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/users/profile",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"NewTest\",              // optional\n    \"email\": \"testing@example.com\", // optional\n    \"phone\": \"9876543210\"           // optional\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3003/api/users/profile",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"users",
+						"profile"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/users/notifications",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3003/api/users/notifications",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"users",
+						"notifications"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/users/notifications/0414159f-d3e9-47e6-9cad-bcc7d6728798/read",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "PUT",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/users/notifications/0414159f-d3e9-47e6-9cad-bcc7d6728798/read",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"users",
+						"notifications",
+						"0414159f-d3e9-47e6-9cad-bcc7d6728798",
+						"read"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "http://localhost:3003/api/consultants?expertise=Clinical Psychology&language=English&availability_date=2025-01-29&availability_start_time=19:00:00&availability_end_time=21:00:00",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImExMjE0YWFhLTA3ZWEtNDFhYS05ZTk4LTUyODdmN2UzZWVhNSIsImlhdCI6MTczODE4MjA1NCwiZXhwIjoxNzM4MjY4NDU0fQ._wdRxMZ--zaO1_ZM6B2o2b9bPmZJ4g0cYQmlE_mIXDo",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3003/api/consultants?expertise=Clinical Psychology&language=English&availability_date=2025-01-29&availability_start_time=19:00:00&availability_end_time=21:00:00",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3003",
+					"path": [
+						"api",
+						"consultants"
+					],
+					"query": [
+						{
+							"key": "expertise",
+							"value": "Clinical Psychology"
+						},
+						{
+							"key": "language",
+							"value": "English"
+						},
+						{
+							"key": "availability_date",
+							"value": "2025-01-29"
+						},
+						{
+							"key": "availability_start_time",
+							"value": "19:00:00"
+						},
+						{
+							"key": "availability_end_time",
+							"value": "21:00:00"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
