@@ -1,24 +1,3 @@
-/*I've rewritten the consultation controller with a simpler, more focused implementation. The key changes include:
-
-Removed complex dependencies (Razorpay, nodemailer) to focus on core functionality first
-Simplified error handling and response formats
-Focused on essential CRUD operations
-Improved SQL queries for better performance
-Consistent error response format
-Added basic analytics functionality
-The controller now includes these main functionalities:
-
-Browse and search consultants
-Get consultant details
-Get consultant availability
-Book consultations
-View consultations
-Add reviews
-Manage favorites
-View analytics
-Would you like me to add any specific functionality or make any modifications to the current implementation?*/
-
-
 const { validationResult } = require('express-validator');
 const { db } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
@@ -27,17 +6,12 @@ const consultationController = {
     // Browse and Search Consultants
     async browseConsultants(req, res) {
         try {
-            console.log('Received query params:', req.query);
-            
             const {
                 expertise,
                 language,
                 rating,
-                availability_date,
-                availability_start_time,
-                availability_end_time,
-                min_experience,
-                max_price,
+                minExperience,
+                maxPrice,
                 page = 1,
                 limit = 10
             } = req.query;
@@ -45,147 +19,157 @@ const consultationController = {
             const offset = (page - 1) * limit;
 
             let query = `
-                WITH ConsultantAvailability AS (
-                    SELECT 
-                        consultant_id,
-                        COUNT(CASE 
-                            WHEN date = ? 
-                            AND start_time >= ?
-                            AND end_time <= ?
-                            AND is_booked = 0
-                            THEN 1 END
-                        ) as available_slots
-                    FROM consultant_availability
-                    GROUP BY consultant_id
-                )
                 SELECT 
                     c.*,
                     u.name,
                     u.email,
-                    COALESCE(ca.available_slots, 0) as available_slots,
                     (
                         SELECT COUNT(r.id) 
-                        FROM reviews r 
-                        WHERE r.consultation_id IN (
-                            SELECT id FROM consultations WHERE consultant_id = c.id
-                        )
-                    ) as review_count,
+                        FROM Reviews r 
+                        JOIN Consultations cons ON r.consultationId = cons.id
+                        WHERE cons.consultantId = c.id
+                    ) as reviewCount,
                     (
                         SELECT AVG(CAST(r.rating as FLOAT)) 
-                        FROM reviews r 
-                        WHERE r.consultation_id IN (
-                            SELECT id FROM consultations WHERE consultant_id = c.id
-                        )
-                    ) as average_rating
-                FROM consultants c
-                JOIN users u ON c.user_id = u.id
-                LEFT JOIN ConsultantAvailability ca ON ca.consultant_id = c.id
-                WHERE c.is_active = 1
+                        FROM Reviews r 
+                        JOIN Consultations cons ON r.consultationId = cons.id
+                        WHERE cons.consultantId = c.id
+                    ) as averageRating
+                FROM Consultants c
+                JOIN Users u ON c.userId = u.id
+                WHERE c.isAvailable = 1
             `;
 
-            const params = [
-                availability_date || null,
-                availability_start_time || null,
-                availability_end_time || null
-            ];
+            const params = [];
 
-            if (expertise) {
-                query += ` AND c.expertise LIKE ?`;
-                params.push(`%${expertise}%`);
+            if (expertise || language || rating || minExperience || maxPrice) {
+                const conditions = [];
+
+                if (rating) {
+                    conditions.push('c.rating >= ?');
+                    params.push(rating);
+                }
+
+                if (minExperience) {
+                    conditions.push('c.experience >= ?');
+                    params.push(minExperience);
+                }
+
+                if (maxPrice) {
+                    conditions.push('c.hourlyRate <= ?');
+                    params.push(maxPrice);
+                }
+
+                if (conditions.length > 0) {
+                    query += ' AND ' + conditions.join(' AND ');
+                }
             }
 
-            if (language) {
-                query += ` AND c.languages LIKE ?`;
-                params.push(`%${language}%`);
-            }
-
-            if (rating) {
-                query += ` AND (
-                    SELECT AVG(CAST(r.rating as FLOAT)) 
-                    FROM reviews r 
-                    WHERE r.consultation_id IN (
-                        SELECT id FROM consultations WHERE consultant_id = c.id
-                    )
-                ) >= ?`;
-                params.push(rating);
-            }
-
-            if (availability_date && availability_start_time && availability_end_time) {
-                query += ` AND ca.available_slots > 0`;
-            }
-
-            // Add sorting
-            query += ` ORDER BY 
-                CASE 
-                    WHEN ? IS NOT NULL THEN ca.available_slots 
-                    ELSE COALESCE(average_rating, 0)
-                END DESC,
-                c.hourly_rate ASC
-            `;
-            params.push(availability_date);
-
-            // Add pagination
-            query += ` LIMIT ? OFFSET ?`;
+            query += ' ORDER BY c.rating DESC LIMIT ? OFFSET ?';
             params.push(limit, offset);
-
-            console.log('Executing query:', query);
-            console.log('With params:', params);
 
             const consultants = await new Promise((resolve, reject) => {
                 db.all(query, params, (err, rows) => {
-                    if (err) {
-                        console.error('Database error:', err);
-                        reject(err);
+                    if (err) reject(err);
+                    else {
+                        // Post-process to filter by expertise and language
+                        let filteredRows = rows;
+
+                        if (expertise) {
+                            filteredRows = filteredRows.filter(row => {
+                                const expertiseList = JSON.parse(row.expertise || '[]');
+                                return expertiseList.some(e =>
+                                    e.toLowerCase().includes(expertise.toLowerCase())
+                                );
+                            });
+                        }
+
+                        if (language) {
+                            filteredRows = filteredRows.filter(row => {
+                                const languageList = JSON.parse(row.languages || '[]');
+                                return languageList.some(l =>
+                                    l.toLowerCase().includes(language.toLowerCase())
+                                );
+                            });
+                        }
+
+                        resolve(filteredRows);
                     }
-                    console.log('Query results:', rows);
-                    resolve(rows);
                 });
             });
 
-            // Get total count for pagination
-            const countQuery = `
-                SELECT COUNT(*) as total
-                FROM consultants c
-                WHERE c.is_active = 1
-                ${expertise ? 'AND c.expertise LIKE ?' : ''}
-                ${language ? 'AND c.languages LIKE ?' : ''}
-            `;
+            // Parse JSON fields
+            const processedConsultants = consultants.map(consultant => ({
+                ...consultant,
+                expertise: JSON.parse(consultant.expertise || '[]'),
+                languages: JSON.parse(consultant.languages || '[]'),
+                availability: consultant.availability ? JSON.parse(consultant.availability) : null,
+                filters: consultant.filters ? JSON.parse(consultant.filters) : null
+            }));
 
-            const countParams = [];
-            if (expertise) countParams.push(`%${expertise}%`);
-            if (language) countParams.push(`%${language}%`);
+            res.json({
+                success: true,
+                data: processedConsultants
+            });
+        } catch (error) {
+            console.error('Error in browseConsultants:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
+        }
+    },
 
-            const totalCount = await new Promise((resolve, reject) => {
-                db.get(countQuery, countParams, (err, row) => {
-                    if (err) {
-                        console.error('Error getting count:', err);
-                        reject(err);
-                    }
-                    resolve(row.total);
+
+    // Mark Consultation as Completed
+    async markConsultationCompleted(req, res) {
+        try {
+            const { consultationId } = req.params;
+
+            // Check if the consultation exists
+            const consultation = await new Promise((resolve, reject) => {
+                db.get('SELECT * FROM Consultations WHERE id = ?', [consultationId], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
                 });
+            });
+
+            if (!consultation) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Consultation not found'
+                });
+            }
+
+            // Update the consultation status to "completed"
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'UPDATE Consultations SET status = ? WHERE id = ?',
+                    ['completed', consultationId],
+                    function (err) {
+                        if (err) {
+                            console.error('Error updating consultation status:', err);
+                            reject(err);
+                        } else {
+                            resolve();
+                        }
+                    }
+                );
             });
 
             res.json({
                 success: true,
-                data: {
-                    consultants,
-                    pagination: {
-                        total: totalCount,
-                        page: parseInt(page),
-                        limit: parseInt(limit),
-                        total_pages: Math.ceil(totalCount / limit)
-                    }
-                }
+                message: `Consultation ${consultationId} marked as completed`
             });
         } catch (error) {
-            console.error('Detailed error in browseConsultants:', error);
-            res.status(500).json({ 
-                success: false, 
-                error: 'Failed to retrieve consultants',
-                details: error.message 
+            console.error('Error in markConsultationCompleted:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
             });
         }
     },
+
 
     // Get Consultant Details
     async getConsultantDetails(req, res) {
@@ -193,31 +177,83 @@ const consultationController = {
             const { id } = req.params;
 
             const consultant = await new Promise((resolve, reject) => {
-                db.get(`
-                    SELECT 
+                db.get(
+                    `SELECT 
                         c.*,
                         u.name,
                         u.email,
-                        (SELECT AVG(rating) FROM reviews r 
-                         JOIN consultations cons ON r.consultation_id = cons.id 
-                         WHERE cons.consultant_id = c.id) as average_rating
-                    FROM consultants c
-                    JOIN users u ON c.user_id = u.id
-                    WHERE c.id = ?
-                `, [id], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                        (
+                            SELECT COUNT(r.id) 
+                            FROM Reviews r 
+                            JOIN Consultations cons ON r.consultationId = cons.id
+                            WHERE cons.consultantId = c.id
+                        ) as reviewCount,
+                        (
+                            SELECT AVG(CAST(r.rating as FLOAT)) 
+                            FROM Reviews r 
+                            JOIN Consultations cons ON r.consultationId = cons.id
+                            WHERE cons.consultantId = c.id
+                        ) as averageRating
+                    FROM Consultants c
+                    JOIN Users u ON c.userId = u.id
+                    WHERE c.id = ? AND c.isAvailable = 1`,
+                    [id],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
             if (!consultant) {
-                return res.status(404).json({ success: false, error: 'Consultant not found' });
+                return res.status(404).json({
+                    success: false,
+                    error: 'Consultant not found'
+                });
             }
 
-            res.json({ success: true, data: consultant });
+            // Get consultation types
+            const consultationTypes = await new Promise((resolve, reject) => {
+                db.all(
+                    'SELECT * FROM ConsultationTypes WHERE consultantId = ? AND isActive = 1',
+                    [id],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
+            });
+
+            // Get recent reviews
+            const reviews = await new Promise((resolve, reject) => {
+                db.all(
+                    `SELECT r.* 
+                     FROM Reviews r
+                     JOIN Consultations c ON r.consultationId = c.id
+                     WHERE c.consultantId = ? AND r.isPublic = 1
+                     ORDER BY r.createdAt DESC LIMIT 5`,
+                    [id],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
+            });
+
+            res.json({
+                success: true,
+                data: {
+                    ...consultant,
+                    consultationTypes,
+                    recentReviews: reviews
+                }
+            });
         } catch (error) {
-            console.error('Error getting consultant details:', error);
-            res.status(500).json({ success: false, error: 'Failed to retrieve consultant details' });
+            console.error('Error in getConsultantDetails:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
@@ -225,20 +261,20 @@ const consultationController = {
     async getConsultantAvailability(req, res) {
         try {
             const { id } = req.params;
-            const { start_date, end_date } = req.query;
+            const { startDate, endDate } = req.query;
 
-            if (!start_date || !end_date) {
+            if (!startDate || !endDate) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Both start_date and end_date are required'
+                    error: 'Both startDate and endDate are required'
                 });
             }
 
             // First check if consultant exists
             const consultant = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM consultants WHERE id = ?', [id], (err, row) => {
+                db.get('SELECT * FROM Consultants WHERE id = ? AND isAvailable = 1', [id], (err, row) => {
                     if (err) reject(err);
-                    resolve(row);
+                    else resolve(row);
                 });
             });
 
@@ -249,43 +285,43 @@ const consultationController = {
                 });
             }
 
-            const availability = await new Promise((resolve, reject) => {
-                db.all(`
-                    SELECT 
-                        ca.*,
-                        c.expertise,
-                        c.languages,
-                        c.hourly_rate,
-                        u.name as consultant_name
-                    FROM consultant_availability ca
-                    JOIN consultants c ON ca.consultant_id = c.id
-                    JOIN users u ON c.user_id = u.id
-                    WHERE ca.consultant_id = ?
-                    AND ca.date BETWEEN ? AND ?
-                    ORDER BY ca.date, ca.start_time
-                `, [id, start_date, end_date], (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                });
+            // Get all consultations within the date range
+            const consultations = await new Promise((resolve, reject) => {
+                db.all(
+                    `SELECT startTime, endTime, status
+                     FROM Consultations
+                     WHERE consultantId = ?
+                     AND status != 'cancelled'
+                     AND (
+                         (startTime BETWEEN ? AND ?) OR
+                         (endTime BETWEEN ? AND ?) OR
+                         (startTime <= ? AND endTime >= ?)
+                     )`,
+                    [id, startDate, endDate, startDate, endDate, startDate, endDate],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
             });
 
-            console.log(`Found ${availability.length} availability slots for consultant ${id}`);
+            // Get consultant's availability settings
+            const availability = consultant.availability ? JSON.parse(consultant.availability) : null;
 
             res.json({
                 success: true,
                 data: {
-                    consultant: {
-                        id: consultant.id,
-                        expertise: consultant.expertise,
-                        languages: consultant.languages,
-                        hourly_rate: consultant.hourly_rate
-                    },
-                    availability: availability
+                    consultantId: id,
+                    availability,
+                    bookedSlots: consultations
                 }
             });
         } catch (error) {
-            console.error('Error getting availability:', error);
-            res.status(500).json({ success: false, error: 'Failed to retrieve availability' });
+            console.error('Error in getConsultantAvailability:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
@@ -294,177 +330,201 @@ const consultationController = {
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, errors: errors.array() });
-            }
-
-            if (!req.user || !req.user.id) {
-                return res.status(401).json({
+                return res.status(400).json({
                     success: false,
-                    error: 'Authentication required. Please login.'
+                    errors: errors.array()
                 });
             }
 
-            const { consultant_id, consultation_type_id, scheduled_start_time } = req.body;
-            const user_id = req.user.id;
+            const { consultantId, consultationTypeId, startTime } = req.body;
+            const userId = 'u1'; // Use our test user ID
 
-            // Validate consultant exists
+            // Verify consultant exists and is available
             const consultant = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM consultants WHERE id = ?', [consultant_id], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                db.get(
+                    'SELECT * FROM Consultants WHERE id = ? AND isAvailable = 1',
+                    [consultantId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
             if (!consultant) {
                 return res.status(404).json({
                     success: false,
-                    error: 'Consultant not found'
+                    error: 'Consultant not found or is unavailable'
                 });
             }
 
-            // Validate consultation type exists
+            // Get consultation type details
             const consultationType = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM consultation_types WHERE id = ?', [consultation_type_id], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                db.get(
+                    'SELECT * FROM ConsultationTypes WHERE id = ? AND consultantId = ? AND isActive = 1',
+                    [consultationTypeId, consultantId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
             if (!consultationType) {
                 return res.status(404).json({
                     success: false,
-                    error: 'Consultation type not found'
+                    error: 'Invalid consultation type'
                 });
             }
 
-            // Check if the consultant is available at the requested time
-            const scheduledDate = new Date(scheduled_start_time).toISOString().split('T')[0];
-            const scheduledTime = new Date(scheduled_start_time).toTimeString().split(' ')[0];
+            // Calculate end time based on duration
+            const startDate = new Date(startTime);
+            const endDate = new Date(startDate.getTime() + consultationType.duration * 60000);
 
-            const availability = await new Promise((resolve, reject) => {
-                db.get(`
-                    SELECT * FROM consultant_availability 
-                    WHERE consultant_id = ? 
-                    AND date = ? 
-                    AND start_time <= ? 
-                    AND end_time > ?
-                    AND is_booked = 0
-                `, [consultant_id, scheduledDate, scheduledTime, scheduledTime], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+            // Check for scheduling conflicts
+            const conflict = await new Promise((resolve, reject) => {
+                db.get(
+                    `SELECT 1 FROM Consultations 
+                     WHERE consultantId = ? 
+                     AND status != 'cancelled'
+                     AND (
+                         (startTime BETWEEN ? AND ?) OR
+                         (endTime BETWEEN ? AND ?) OR
+                         (startTime <= ? AND endTime >= ?)
+                     )`,
+                    [consultantId, startDate.toISOString(), endDate.toISOString(),
+                        startDate.toISOString(), endDate.toISOString(),
+                        startDate.toISOString(), endDate.toISOString()],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
-            if (!availability) {
+            if (conflict) {
                 return res.status(400).json({
                     success: false,
                     error: 'Selected time slot is not available'
                 });
             }
 
-            // Start transaction
+            // Create consultation
+            const consultationId = uuidv4();
             await new Promise((resolve, reject) => {
-                db.run('BEGIN TRANSACTION', err => {
-                    if (err) reject(err);
-                    resolve();
-                });
+                db.run(
+                    `INSERT INTO Consultations (
+                        id, userId, consultantId, consultationTypeId,
+                        startTime, endTime, status, paymentStatus, amount
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        consultationId,
+                        userId,
+                        consultantId,
+                        consultationTypeId,
+                        startDate.toISOString(),
+                        endDate.toISOString(),
+                        'scheduled',
+                        'pending',
+                        consultationType.price
+                    ],
+                    function (err) {
+                        if (err) {
+                            console.error('Error inserting consultation:', err);
+                            reject(err);
+                        } else {
+                            resolve();
+                        }
+                    }
+                );
             });
 
-            try {
-                // Create consultation
-                const consultationId = uuidv4();
-                await new Promise((resolve, reject) => {
-                    db.run(
-                        'INSERT INTO consultations (id, consultant_id, user_id, consultation_type_id, scheduled_start_time) VALUES (?, ?, ?, ?, ?)',
-                        [consultationId, consultant_id, user_id, consultation_type_id, scheduled_start_time],
-                        (err) => {
-                            if (err) reject(err);
+            // Create session details
+            const sessionId = uuidv4();
+            await new Promise((resolve, reject) => {
+                db.run(
+                    `INSERT INTO SessionDetails (
+                        id, consultationId, platformDetails
+                    ) VALUES (?, ?, ?)`,
+                    [
+                        sessionId,
+                        consultationId,
+                        JSON.stringify({})
+                    ],
+                    function (err) {
+                        if (err) {
+                            console.error('Error inserting session details:', err);
+                            reject(err);
+                        } else {
                             resolve();
                         }
-                    );
-                });
-
-                // Mark availability as booked
-                await new Promise((resolve, reject) => {
-                    db.run(
-                        'UPDATE consultant_availability SET is_booked = 1 WHERE id = ?',
-                        [availability.id],
-                        (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        }
-                    );
-                });
-
-                // Commit transaction
-                await new Promise((resolve, reject) => {
-                    db.run('COMMIT', err => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
-
-                res.json({
-                    success: true,
-                    data: {
-                        consultation_id: consultationId,
-                        consultant_id,
-                        consultation_type: consultationType.name,
-                        scheduled_start_time,
-                        duration: consultationType.duration
                     }
-                });
-            } catch (error) {
-                // Rollback transaction on error
-                await new Promise((resolve) => {
-                    db.run('ROLLBACK', () => resolve());
-                });
-                throw error;
-            }
+                );
+            });
+
+            res.json({
+                success: true,
+                data: {
+                    consultationId,
+                    startTime: startDate,
+                    endTime: endDate,
+                    amount: consultationType.price
+                }
+            });
         } catch (error) {
-            console.error('Error booking consultation:', error);
-            res.status(500).json({ success: false, error: 'Failed to book consultation' });
+            console.error('Error in bookConsultation:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
     // Get My Consultations
     async getMyConsultations(req, res) {
         try {
-            const { status } = req.query;
-            const user_id = req.user.id;
-
-            let query = `
-                SELECT 
-                    c.*,
-                    ct.name as consultation_type,
-                    u.name as consultant_name
-                FROM consultations c
-                JOIN consultation_types ct ON c.consultation_type_id = ct.id
-                JOIN consultants cons ON c.consultant_id = cons.id
-                JOIN users u ON cons.user_id = u.id
-                WHERE c.user_id = ?
-            `;
-
-            const params = [user_id];
-
-            if (status) {
-                query += ` AND c.status = ?`;
-                params.push(status);
-            }
-
-            query += ` ORDER BY c.scheduled_start_time DESC`;
+            const userId = req.user.id; // Use the authenticated user's ID
 
             const consultations = await new Promise((resolve, reject) => {
-                db.all(query, params, (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                });
+                db.all(
+                    `SELECT 
+                        c.*,
+                        ct.name as consultationType,
+                        ct.sessionType,
+                        ct.duration,
+                        cons.name as consultantName,
+                        u.name as userName,
+                        sd.videoUrl,
+                        sd.chatUrl,
+                        sd.callUrl,
+                        r.rating,
+                        r.review
+                    FROM Consultations c
+                    JOIN ConsultationTypes ct ON c.consultationTypeId = ct.id
+                    JOIN Consultants cons ON c.consultantId = cons.id
+                    JOIN Users u ON cons.userId = u.id
+                    LEFT JOIN SessionDetails sd ON c.id = sd.consultationId
+                    LEFT JOIN Reviews r ON c.id = r.consultationId
+                    WHERE c.userId = ?
+                    ORDER BY c.startTime DESC`,
+                    [userId],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
             });
 
-            res.json({ success: true, data: consultations });
+            res.json({
+                success: true,
+                data: consultations
+            });
         } catch (error) {
-            console.error('Error getting consultations:', error);
-            res.status(500).json({ success: false, error: 'Failed to retrieve consultations' });
+            console.error('Error in getMyConsultations:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
@@ -473,26 +533,25 @@ const consultationController = {
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, errors: errors.array() });
+                return res.status(400).json({
+                    success: false,
+                    errors: errors.array()
+                });
             }
 
-            const { consultation_id, rating, comment } = req.body;
-            const user_id = req.user.id;
+            const { consultationId, rating, review } = req.body;
+            const userId = 'u1'; // Use our test user ID
 
             // Verify consultation exists and belongs to user
             const consultation = await new Promise((resolve, reject) => {
-                db.get(`
-                    SELECT c.*, ct.name as consultation_type, ct.duration,
-                           cons.expertise, u.name as consultant_name
-                    FROM consultations c
-                    JOIN consultation_types ct ON c.consultation_type_id = ct.id
-                    JOIN consultants cons ON c.consultant_id = cons.id
-                    JOIN users u ON cons.user_id = u.id
-                    WHERE c.id = ? AND c.user_id = ?
-                `, [consultation_id, user_id], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                db.get(
+                    'SELECT * FROM Consultations WHERE id = ? AND userId = ? AND status = ?',
+                    [consultationId, userId, 'completed'],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
             if (!consultation) {
@@ -504,10 +563,14 @@ const consultationController = {
 
             // Check if review already exists
             const existingReview = await new Promise((resolve, reject) => {
-                db.get('SELECT id FROM reviews WHERE consultation_id = ?', [consultation_id], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                db.get(
+                    'SELECT * FROM Reviews WHERE consultationId = ?',
+                    [consultationId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
             if (existingReview) {
@@ -517,41 +580,62 @@ const consultationController = {
                 });
             }
 
-            // Add review
-            const review_id = uuidv4();
+            // Create review
+            const reviewId = uuidv4();
             await new Promise((resolve, reject) => {
-                db.run(`
-                    INSERT INTO reviews (
-                        id, consultation_id, user_id, rating, comment,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                `, [review_id, consultation_id, user_id, rating, comment],
-                    err => {
+                db.run(
+                    `INSERT INTO Reviews (
+                        id, consultationId, rating, review,
+                        isPublic, isModerated
+                    ) VALUES (?, ?, ?, ?, ?, ?)`,
+                    [reviewId, consultationId, rating, review, true, false],
+                    function (err) {
                         if (err) reject(err);
-                        resolve();
-                    });
+                        else resolve();
+                    }
+                );
             });
 
-            res.status(201).json({
+            // Update consultant rating
+            await new Promise((resolve, reject) => {
+                db.run(
+                    `UPDATE Consultants 
+                     SET rating = (
+                         SELECT AVG(CAST(r.rating as FLOAT))
+                         FROM Reviews r
+                         JOIN Consultations c ON r.consultationId = c.id
+                         WHERE c.consultantId = ?
+                     ),
+                     totalRatings = (
+                         SELECT COUNT(r.id)
+                         FROM Reviews r
+                         JOIN Consultations c ON r.consultationId = c.id
+                         WHERE c.consultantId = ?
+                     )
+                     WHERE id = ?`,
+                    [consultation.consultantId, consultation.consultantId, consultation.consultantId],
+                    function (err) {
+                        if (err) reject(err);
+                        else resolve();
+                    }
+                );
+            });
+
+            res.json({
                 success: true,
                 data: {
-                    review_id,
-                    consultation: {
-                        id: consultation.id,
-                        type: consultation.consultation_type,
-                        consultant_name: consultation.consultant_name,
-                        expertise: consultation.expertise,
-                        scheduled_start_time: consultation.scheduled_start_time,
-                        duration: consultation.duration
-                    },
+                    reviewId,
+                    consultationId,
                     rating,
-                    comment
-                },
-                message: 'Review added successfully'
+                    review
+                }
             });
         } catch (error) {
-            console.error('Error adding review:', error);
-            res.status(500).json({ success: false, error: 'Failed to add review' });
+            console.error('Error in addReview:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
@@ -559,14 +643,18 @@ const consultationController = {
     async addToFavorites(req, res) {
         try {
             const { consultantId } = req.params;
-            const user_id = req.user.id;
+            const userId = 'u1'; // Use our test user ID
 
-            // Check if consultant exists
+            // Verify consultant exists
             const consultant = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM consultants WHERE id = ?', [consultantId], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
+                db.get(
+                    'SELECT * FROM Consultants WHERE id = ?',
+                    [consultantId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row);
+                    }
+                );
             });
 
             if (!consultant) {
@@ -576,32 +664,36 @@ const consultationController = {
                 });
             }
 
-            // Add to favorites with a unique ID
-            const favorite_id = uuidv4();
+            // Add to favorites
+            const favoriteId = uuidv4();
             await new Promise((resolve, reject) => {
-                db.run(`
-                    INSERT INTO favorites (
-                        id, user_id, consultant_id, created_at
-                    ) VALUES (?, ?, ?, datetime('now'))
-                `, [favorite_id, user_id, consultantId], (err) => {
-                    if (err && err.code === 'SQLITE_CONSTRAINT') {
-                        // If unique constraint fails, the favorite already exists
-                        resolve({ alreadyExists: true });
-                    } else if (err) {
-                        reject(err);
-                    } else {
-                        resolve({ alreadyExists: false });
+                db.run(
+                    `INSERT INTO FavoriteConsultants (
+                        id, userId, consultantId, notifyAvailability
+                    ) VALUES (?, ?, ?, ?)`,
+                    [favoriteId, userId, consultantId, false],
+                    function (err) {
+                        if (err && err.code === 'SQLITE_CONSTRAINT') {
+                            resolve(); // Already favorited
+                        } else if (err) {
+                            reject(err);
+                        } else {
+                            resolve();
+                        }
                     }
-                });
+                );
             });
 
             res.json({
                 success: true,
-                message: 'Added to favorites successfully'
+                message: 'Added to favorites'
             });
         } catch (error) {
-            console.error('Error adding to favorites:', error);
-            res.status(500).json({ success: false, error: 'Failed to add to favorites' });
+            console.error('Error in addToFavorites:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
@@ -609,56 +701,54 @@ const consultationController = {
     async removeFromFavorites(req, res) {
         try {
             const { consultantId } = req.params;
-            const user_id = req.user.id;
+            const userId = 'u1'; // Use our test user ID
 
-            const result = await new Promise((resolve, reject) => {
+            await new Promise((resolve, reject) => {
                 db.run(
-                    'DELETE FROM favorites WHERE user_id = ? AND consultant_id = ?',
-                    [user_id, consultantId],
-                    function(err) {
+                    'DELETE FROM FavoriteConsultants WHERE userId = ? AND consultantId = ?',
+                    [userId, consultantId],
+                    function (err) {
                         if (err) reject(err);
-                        resolve(this.changes);
+                        else resolve();
                     }
                 );
             });
 
-            if (result === 0) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Favorite not found'
-                });
-            }
-
             res.json({
                 success: true,
-                message: 'Removed from favorites successfully'
+                message: 'Removed from favorites'
             });
         } catch (error) {
-            console.error('Error removing from favorites:', error);
-            res.status(500).json({ success: false, error: 'Failed to remove from favorites' });
+            console.error('Error in removeFromFavorites:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
     // Get Favorites
     async getFavorites(req, res) {
         try {
-            const user_id = req.user.id;
+            const userId = 'u1'; // Use our test user ID
 
             const favorites = await new Promise((resolve, reject) => {
-                db.all(`
-                    SELECT 
-                        f.id as favorite_id,
+                db.all(
+                    `SELECT 
+                        f.*,
                         c.*,
-                        u.name as consultant_name,
-                        u.email as consultant_email
-                    FROM favorites f
-                    JOIN consultants c ON f.consultant_id = c.id
-                    JOIN users u ON c.user_id = u.id
-                    WHERE f.user_id = ?
-                `, [user_id], (err, rows) => {
-                    if (err) reject(err);
-                    resolve(rows);
-                });
+                        u.name as consultantName,
+                        u.email as consultantEmail
+                    FROM FavoriteConsultants f
+                    JOIN Consultants c ON f.consultantId = c.id
+                    JOIN Users u ON c.userId = u.id
+                    WHERE f.userId = ?`,
+                    [userId],
+                    (err, rows) => {
+                        if (err) reject(err);
+                        else resolve(rows);
+                    }
+                );
             });
 
             res.json({
@@ -666,55 +756,70 @@ const consultationController = {
                 data: favorites
             });
         } catch (error) {
-            console.error('Error getting favorites:', error);
-            res.status(500).json({ success: false, error: 'Failed to get favorites' });
+            console.error('Error in getFavorites:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     },
 
-    // Get Analytics
-    async getAnalytics(req, res) {
+    // Update Consultation Status
+    async updateConsultationStatus(req, res) {
         try {
-            const { start_date, end_date, consultant_id } = req.query;
+            const { id } = req.params;
+            const { status } = req.body;
 
-            let query = `
-                SELECT 
-                    COUNT(*) as total_consultations,
-                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_consultations,
-                    COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_consultations,
-                    AVG(CASE WHEN r.rating IS NOT NULL THEN r.rating END) as average_rating
-                FROM consultations c
-                LEFT JOIN reviews r ON c.id = r.consultation_id
-                WHERE 1=1
-            `;
-
-            const params = [];
-
-            if (start_date) {
-                query += ` AND c.scheduled_start_time >= ?`;
-                params.push(start_date);
+            // Validate status
+            const validStatuses = ['pending', 'in_progress', 'complete'];
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid status value'
+                });
             }
 
-            if (end_date) {
-                query += ` AND c.scheduled_start_time <= ?`;
-                params.push(end_date);
-            }
-
-            if (consultant_id) {
-                query += ` AND c.consultant_id = ?`;
-                params.push(consultant_id);
-            }
-
-            const analytics = await new Promise((resolve, reject) => {
-                db.get(query, params, (err, row) => {
+            // Check if consultation exists
+            const consultation = await new Promise((resolve, reject) => {
+                db.get('SELECT * FROM Consultations WHERE id = ?', [id], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
                 });
             });
 
-            res.json({ success: true, data: analytics });
+            if (!consultation) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Consultation not found'
+                });
+            }
+
+            // Update the consultation status in the database
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'UPDATE Consultations SET status = ? WHERE id = ?',
+                    [status, id],
+                    function (err) {
+                        if (err) {
+                            console.error('Error updating consultation status:', err);
+                            reject(err);
+                        } else {
+                            resolve();
+                        }
+                    }
+                );
+            });
+
+            res.json({
+                success: true,
+                message: 'Consultation status updated successfully'
+            });
         } catch (error) {
-            console.error('Error getting analytics:', error);
-            res.status(500).json({ success: false, error: 'Failed to retrieve analytics' });
+            console.error('Error in updateConsultationStatus:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
+            });
         }
     }
 };
