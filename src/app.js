@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+require("../database/init")
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');

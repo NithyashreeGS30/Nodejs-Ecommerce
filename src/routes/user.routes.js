@@ -20,23 +20,6 @@ router.put('/profile',
     userController.updateProfile
 );
 
-// Email Preferences Routes
-router.get('/preferences/email',
-    authMiddleware.verifyToken,
-    userController.getEmailPreferences
-);
-
-router.put('/preferences/email',
-    authMiddleware.verifyToken,
-    [
-        body('newsletter').isBoolean(),
-        body('promotions').isBoolean(),
-        body('consultationReminders').isBoolean(),
-        body('paymentNotifications').isBoolean()
-    ],
-    userController.updateEmailPreferences
-);
-
 // Account Management Routes
 router.post('/account/deactivate',
     authMiddleware.verifyToken,
@@ -60,6 +43,16 @@ router.delete('/account',
     userController.deleteAccount
 );
 
+
+
+
+
+
+
+
+
+
+
 // Notification Management Routes
 router.get('/notifications',
     authMiddleware.verifyToken,
@@ -76,15 +69,48 @@ router.delete('/notifications/:notificationId',
     userController.dismissNotification
 );
 
-router.put('/notifications/preferences',
+// Notification Preferences Routes
+router.get('/preferences/notifications',
+    authMiddleware.verifyToken,
+    userController.getNotificationPreferences
+);
+
+router.put('/preferences/notifications/:type',
     authMiddleware.verifyToken,
     [
-        body('email').optional().isBoolean(),
-        body('sms').optional().isBoolean(),
-        body('inApp').optional().isBoolean()
+        body('email_enabled').isBoolean(),
+        body('push_enabled').isBoolean()
     ],
-    userController.updateNotificationPreferences
+    userController.updateNotificationPreference
 );
+
+
+
+// Email Preferences Routes
+router.get('/preferences/email',
+    authMiddleware.verifyToken,
+    userController.getEmailPreferences
+);
+
+router.put('/preferences/email',
+    authMiddleware.verifyToken,
+    [
+        body('marketing_emails').isBoolean(),
+        body('newsletter').isBoolean()
+    ],
+    userController.updateEmailPreferences
+);
+
+
+
+
+
+
+
+
+
+
+
 
 // Two-Factor Authentication Routes
 router.post('/2fa/enable',

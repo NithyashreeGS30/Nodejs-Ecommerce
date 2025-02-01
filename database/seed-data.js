@@ -98,7 +98,7 @@ async function seedData() {
             // Insert consultant
             await new Promise((resolve, reject) => {
                 db.run(
-                    'INSERT INTO consultants (id, user_id, expertise, languages, hourly_rate, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+                    'INSERT INTO consultants (id, user_id, expertise, languages, hourly_rate, isActive) VALUES (?, ?, ?, ?, ?, ?)',
                     [uuidv4(), entry.user.id, entry.consultant.expertise, entry.consultant.languages, entry.consultant.hourly_rate, true],
                     (err) => {
                         if (err) reject(err);

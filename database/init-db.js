@@ -12,7 +12,7 @@ const db = new sqlite3.Database(path.join(__dirname, 'user_profiles.db'), (err) 
 });
 
 // Read and execute schema
-const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+const schema = fs.readFileSync(path.join(__dirname, 'updated_schema.sql'), 'utf8');
 
 // Split the schema into individual statements
 const statements = schema.split(';').filter(stmt => stmt.trim());

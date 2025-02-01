@@ -3,6 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middleware/auth.middleware');
+const checkActiveMiddleware = require('../middleware/checkActive.middleware');
 
 // Input validation middleware
 const registerValidation = [
@@ -23,7 +24,7 @@ const passwordResetValidation = [
 
 // Auth routes
 router.post('/register', registerValidation, authController.register);
-router.post('/login', loginValidation, authController.login);
+router.post('/login', loginValidation, checkActiveMiddleware.verifyActive, authController.login);
 router.post('/logout', authMiddleware.verifyToken, authController.logout);
 router.post('/logout-all', authMiddleware.verifyToken, authController.logoutAll);
 router.post('/verify-email/', authController.verifyEmail);

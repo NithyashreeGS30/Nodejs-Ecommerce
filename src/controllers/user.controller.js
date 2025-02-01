@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { db } = require('../config/database');
 const jwt = require('jsonwebtoken');
 
@@ -43,16 +44,18 @@ const userController = {
             if (!errors.isEmpty()) {
                 return res.status(400).json({ success: false, errors: errors.array() });
             }
-    
+
             const allowedFields = [
-                'name', 'email', 'phone', 'profile_picture_url', 
+                'name', 'email', 'phone', 'profile_picture_url',
                 'two_factor_method', 'backup_codes'
             ]; // Allowed fields that can be updated
-    
+
             const updates = [];
             const values = [];
             const userId = req.user.id;
-    
+            let newEmailVerificationToken = null;
+            let updatedEmail = null;
+
             for (const field of allowedFields) {
                 if (req.body[field] !== undefined) {
                     // Handle special cases
@@ -64,17 +67,26 @@ const userController = {
                                 resolve(row);
                             });
                         });
-    
+
                         if (existingUser) {
                             return res.status(400).json({
                                 success: false,
                                 error: 'Email already in use'
                             });
                         }
-    
-                        updates.push('email = ?, email_verified = 0'); // Reset email verification
+
+                        // Generate new verification token
+                        newEmailVerificationToken = jwt.sign(
+                            { email: req.body.email },
+                            process.env.JWT_SECRET,
+                            { expiresIn: '24h' }
+                        );
+                        updatedEmail = req.body.email;
+
+                        // Update email & reset email_verified
+                        updates.push('email = ?, email_verified = 0');
                         values.push(req.body.email);
-                    } 
+                    }
                     else if (field === 'phone') {
                         // Check if phone is already in use
                         const existingUser = await new Promise((resolve, reject) => {
@@ -83,17 +95,17 @@ const userController = {
                                 resolve(row);
                             });
                         });
-    
+
                         if (existingUser) {
                             return res.status(400).json({
                                 success: false,
                                 error: 'Phone number already in use'
                             });
                         }
-    
+
                         updates.push('phone = ?');
                         values.push(req.body.phone);
-                    } 
+                    }
                     else {
                         // For all other allowed fields
                         updates.push(`${field} = ?`);
@@ -101,19 +113,19 @@ const userController = {
                     }
                 }
             }
-    
+
             if (updates.length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'No updates provided'
                 });
             }
-    
+
             // Always update the `updated_at` timestamp
             updates.push('updated_at = datetime("now")');
-    
+
             values.push(userId); // Append userId for WHERE clause
-    
+
             // Update user information dynamically
             await new Promise((resolve, reject) => {
                 db.run(`
@@ -125,7 +137,7 @@ const userController = {
                     resolve();
                 });
             });
-    
+
             // Get updated user data
             const updatedUser = await new Promise((resolve, reject) => {
                 db.get(`
@@ -137,11 +149,12 @@ const userController = {
                     resolve(row);
                 });
             });
-    
+
             res.json({
                 success: true,
                 message: 'Profile updated successfully',
-                data: updatedUser
+                data: updatedUser,
+                ...(newEmailVerificationToken && { email_verification_token: newEmailVerificationToken }) // Include token in response if email was updated
             });
         } catch (error) {
             console.error('Error updating profile:', error);
@@ -149,85 +162,134 @@ const userController = {
         }
     },
 
+
     // Email Preferences
     async getEmailPreferences(req, res) {
         try {
-            const preferences = await new Promise((resolve, reject) => {
-                db.get(`
-                    SELECT newsletter, promotions, consultation_reminders, payment_notifications
-                    FROM email_preferences 
-                    WHERE user_id = ?
-                `, [req.user.id], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row || {
-                        newsletter: true,
-                        promotions: true,
-                        consultation_reminders: true,
-                        payment_notifications: true
-                    });
-                });
+            const userId = req.user.id;
+
+            const preference = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT * FROM email_preferences WHERE user_id = ?',
+                    [userId],
+                    (err, row) => {
+                        if (err) return reject(err);
+                        resolve(row);
+                    }
+                );
             });
 
-            res.json({
-                success: true,
-                data: preferences
+            return res.status(200).json({
+                status: 'success',
+                data: preference || null
             });
         } catch (error) {
-            console.error('Error getting email preferences:', error);
-            res.status(500).json({ success: false, error: 'Failed to get email preferences' });
+            console.error('Error fetching email preferences:', error);
+            return res.status(500).json({
+                status: 'error',
+                message: 'Error fetching email preferences'
+            });
         }
     },
 
+    /**
+     * UPDATE or CREATE email preferences for the current user
+     *
+     * Example body payload:
+     * {
+     *   "marketing_emails": true,
+     *   "newsletter": false
+     * }
+     */
     async updateEmailPreferences(req, res) {
         try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, errors: errors.array() });
-            }
+            const userId = req.user.id;
+            const { marketing_emails, newsletter } = req.body;
 
-            const { newsletter, promotions, consultationReminders, paymentNotifications } = req.body;
-
-            await new Promise((resolve, reject) => {
-                db.run(`
-                    INSERT OR REPLACE INTO email_preferences (
-                        user_id, newsletter, promotions, consultation_reminders, payment_notifications,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, ?, datetime('now'))
-                `, [req.user.id, newsletter, promotions, consultationReminders, paymentNotifications],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
+            // Check if a record for this user already exists
+            const existingPreference = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT * FROM email_preferences WHERE user_id = ?',
+                    [userId],
+                    (err, row) => {
+                        if (err) return reject(err);
+                        resolve(row);
+                    }
+                );
             });
 
-            res.json({
-                success: true,
+            if (existingPreference) {
+                // Update existing preferences
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        `UPDATE email_preferences
+                         SET marketing_emails = ?,
+                             newsletter = ?,
+                             updated_at = datetime('now')
+                         WHERE user_id = ?`,
+                        [marketing_emails, newsletter, userId],
+                        function (err) {
+                            if (err) return reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            } else {
+                // Create a new preferences record
+                const id = uuidv4();
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        `INSERT INTO email_preferences
+                         (id, user_id, marketing_emails, newsletter)
+                         VALUES (?, ?, ?, ?)`,
+                        [id, userId, marketing_emails, newsletter],
+                        function (err) {
+                            if (err) return reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            }
+
+            return res.status(200).json({
+                status: 'success',
                 message: 'Email preferences updated successfully'
             });
         } catch (error) {
             console.error('Error updating email preferences:', error);
-            res.status(500).json({ success: false, error: 'Failed to update email preferences' });
+            return res.status(500).json({
+                status: 'error',
+                message: 'Error updating email preferences'
+            });
         }
     },
 
     // Account Management
     async deactivateAccount(req, res) {
         try {
+            // Generate a random reactivation code
+            const reactivationCode = crypto.randomBytes(32).toString('hex');
+
             await new Promise((resolve, reject) => {
-                db.run('UPDATE users SET is_active = 0, updated_at = datetime("now") WHERE id = ?',
-                    [req.user.id], (err) => {
+                db.run('UPDATE users SET isActive = 0, reactivation_code = ?, updated_at = datetime("now") WHERE id = ?',
+                    [reactivationCode, req.user.id], (err) => {
                         if (err) reject(err);
                         resolve();
                     });
             });
 
+            // Return the reactivation code to the user
             res.json({
                 success: true,
-                message: 'Account deactivated successfully'
+                message: 'Account deactivated successfully. Use the reactivation code to reactivate your account.',
+                reactivation_code: reactivationCode
             });
         } catch (error) {
             console.error('Error deactivating account:', error);
-            res.status(500).json({ success: false, error: 'Failed to deactivate account' });
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error while deactivating account'
+            });
         }
     },
 
@@ -235,16 +297,19 @@ const userController = {
         try {
             const errors = validationResult(req);
             if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, errors: errors.array() });
+                return res.status(400).json({
+                    success: false,
+                    errors: errors.array()
+                });
             }
 
             const { email, reactivationCode } = req.body;
 
-            // Verify reactivation code
+            // Find user with matching email and reactivation code
             const user = await new Promise((resolve, reject) => {
                 db.get(`
                     SELECT id FROM users 
-                    WHERE email = ? AND reactivation_code = ? AND is_active = 0
+                    WHERE email = ? AND reactivation_code = ? AND isActive = 0
                 `, [email, reactivationCode], (err, row) => {
                     if (err) reject(err);
                     resolve(row);
@@ -254,14 +319,15 @@ const userController = {
             if (!user) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Invalid reactivation code or email'
+                    error: 'Invalid email or reactivation code'
                 });
             }
 
+            // Reactivate the account and clear the reactivation code
             await new Promise((resolve, reject) => {
                 db.run(`
                     UPDATE users 
-                    SET is_active = 1, reactivation_code = NULL, updated_at = datetime('now')
+                    SET isActive = 1, reactivation_code = NULL, updated_at = datetime('now')
                     WHERE id = ?
                 `, [user.id], (err) => {
                     if (err) reject(err);
@@ -271,11 +337,14 @@ const userController = {
 
             res.json({
                 success: true,
-                message: 'Account reactivated successfully'
+                message: 'Account reactivated successfully. You can now log in.'
             });
         } catch (error) {
             console.error('Error reactivating account:', error);
-            res.status(500).json({ success: false, error: 'Failed to reactivate account' });
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error while reactivating account'
+            });
         }
     },
 
@@ -366,10 +435,11 @@ const userController = {
 
     // Notification Management
     async getNotifications(req, res) {
+        console.log(req.body)
         try {
             const notifications = await new Promise((resolve, reject) => {
                 db.all(`
-                    SELECT id, type, title, message, is_read, created_at
+                    SELECT *
                     FROM notifications
                     WHERE user_id = ?
                     ORDER BY created_at DESC
@@ -450,34 +520,104 @@ const userController = {
         }
     },
 
-    async updateNotificationPreferences(req, res) {
+    async getNotificationPreferences(req, res) {
         try {
-            const errors = validationResult(req);
-            if (!errors.isEmpty()) {
-                return res.status(400).json({ success: false, errors: errors.array() });
-            }
+            const userId = req.user.id;
 
-            const { email, sms, inApp } = req.body;
-
-            await new Promise((resolve, reject) => {
-                db.run(`
-                    INSERT OR REPLACE INTO notification_preferences (
-                        user_id, email_enabled, sms_enabled, in_app_enabled,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, datetime('now'))
-                `, [req.user.id, email, sms, inApp], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
+            const preferences = await new Promise((resolve, reject) => {
+                db.all(
+                    'SELECT * FROM notification_preferences WHERE user_id = ?',
+                    [userId],
+                    (err, rows) => {
+                        if (err) return reject(err);
+                        resolve(rows);
+                    }
+                );
             });
 
-            res.json({
-                success: true,
-                message: 'Notification preferences updated successfully'
+            return res.status(200).json({
+                status: 'success',
+                data: preferences
             });
         } catch (error) {
-            console.error('Error updating notification preferences:', error);
-            res.status(500).json({ success: false, error: 'Failed to update notification preferences' });
+            console.error('Error fetching notification preferences:', error);
+            return res.status(500).json({
+                status: 'error',
+                message: 'Error fetching notification preferences'
+            });
+        }
+    },
+
+    /**
+     * UPDATE or CREATE a notification preference for a specific type
+     *
+     * Example body payload:
+     * {
+     *   "email_enabled": true,
+     *   "push_enabled": false
+     * }
+     */
+    async updateNotificationPreference(req, res) {
+        try {
+            const userId = req.user.id;
+            const { type } = req.params;
+            const { email_enabled, push_enabled } = req.body;
+
+            // Check if a record for this user and type already exists
+            const existingPreference = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT * FROM notification_preferences WHERE user_id = ? AND type = ?',
+                    [userId, type],
+                    (err, row) => {
+                        if (err) return reject(err);
+                        resolve(row);
+                    }
+                );
+            });
+
+            if (existingPreference) {
+                // Update existing preference
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        `UPDATE notification_preferences
+                         SET email_enabled = ?,
+                             push_enabled = ?,
+                             updated_at = datetime('now')
+                         WHERE user_id = ? AND type = ?`,
+                        [email_enabled, push_enabled, userId, type],
+                        function (err) {
+                            if (err) return reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            } else {
+                // Create a new preference record
+                const id = uuidv4();
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        `INSERT INTO notification_preferences
+                         (id, user_id, type, email_enabled, push_enabled)
+                         VALUES (?, ?, ?, ?, ?)`,
+                        [id, userId, type, email_enabled, push_enabled],
+                        function (err) {
+                            if (err) return reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            }
+
+            return res.status(200).json({
+                status: 'success',
+                message: 'Notification preference updated successfully'
+            });
+        } catch (error) {
+            console.error('Error updating notification preference:', error);
+            return res.status(500).json({
+                status: 'error',
+                message: 'Error updating notification preference'
+            });
         }
     },
 
