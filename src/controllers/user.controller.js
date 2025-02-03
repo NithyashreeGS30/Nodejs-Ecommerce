@@ -353,14 +353,16 @@ const userController = {
     async getNotifications(req, res) {
         try {
             console.log('User ID before query:', req.user.id); // Log the user ID
+            console.log("Connected to SQLite DB:", db.filename);
             const notifications = await new Promise((resolve, reject) => {
                 db.all(`
-                    SELECT id, type, title, message, isRead, createdAt
+                    SELECT id,userId, type, title, message, isRead, createdAt
                     FROM Notifications
                     WHERE userId = ?
                     ORDER BY createdAt DESC
-                `, [req.user.id], (err, rows) => {
+                `, [String(req.user.id)], (err, rows) => {
                     if (err) reject(err);
+                    console.log("Rows:", rows)
                     resolve(rows || []);
                 });
             });
