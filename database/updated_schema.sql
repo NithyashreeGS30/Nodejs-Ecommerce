@@ -213,18 +213,22 @@ CREATE TABLE IF NOT EXISTS AdminAnalytics (
 -- Create triggers for updating timestamps
 CREATE TRIGGER IF NOT EXISTS update_user_timestamp
 AFTER UPDATE ON Users
+FOR EACH ROW
 BEGIN
     UPDATE Users SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS update_consultant_timestamp
 AFTER UPDATE ON Consultants
+FOR EACH ROW
 BEGIN
     UPDATE Consultants SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS update_consultation_timestamp
 AFTER UPDATE ON Consultations
+FOR EACH ROW
 BEGIN
     UPDATE Consultations SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
+
